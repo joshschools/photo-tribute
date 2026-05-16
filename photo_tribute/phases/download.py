@@ -1,7 +1,6 @@
 """Phase 2: Download mismatched assets from iCloud via icloudpd."""
 
 import subprocess
-import sys
 from pathlib import Path
 
 from photo_tribute.state import State, AssetStatus
@@ -24,7 +23,7 @@ def run_download(icloud_username: str, icloud_password: str | None = None) -> No
     # icloudpd downloads by album/folder, not individual asset IDs.
     # We download the full recent window into staging and then filter locally.
     cmd = [
-        sys.executable, "-m", "icloudpd",
+        "icloudpd",
         "--directory", str(STAGING_DIR),
         "--username", icloud_username,
         "--set-exif-datetime",       # write DateTimeOriginal from asset capture date

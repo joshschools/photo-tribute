@@ -8,7 +8,6 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = [
-    "https://www.googleapis.com/auth/photoslibrary.readonly",
     "https://www.googleapis.com/auth/photoslibrary.appendonly",
 ]
 TOKEN_FILE = Path("token.json")
