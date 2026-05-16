@@ -13,6 +13,27 @@ def cli():
 @cli.command()
 @click.option("--icloud-user", envvar="ICLOUD_USERNAME", required=True, help="Apple ID email")
 @click.option("--icloud-pass", envvar="ICLOUD_PASSWORD", default=None, help="Apple ID password (or set ICLOUD_PASSWORD)")
+def auth(icloud_user, icloud_pass):
+    """Authenticate with iCloud and save session cookie (do this once, lasts ~2 months)."""
+    import subprocess
+    cmd = [
+        "icloudpd",
+        "--username", icloud_user,
+        "--cookie-directory", ".icloud-session",
+        "--auth-only",
+    ]
+    if icloud_pass:
+        cmd += ["--password", icloud_pass]
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        click.echo("\nSession saved to .icloud-session/ — no 2FA needed for subsequent runs.")
+    else:
+        click.echo("\nAuth failed. Check your credentials and try again.", err=True)
+
+
+@cli.command()
+@click.option("--icloud-user", envvar="ICLOUD_USERNAME", required=True, help="Apple ID email")
+@click.option("--icloud-pass", envvar="ICLOUD_PASSWORD", default=None, help="Apple ID password (or set ICLOUD_PASSWORD)")
 @click.option("--days", default=10, show_default=True, help="How many days back in iCloud to catalog")
 def catalog(icloud_user, icloud_pass, days):
     """Phase 1: Catalog iCloud assets from the migration window into state.json."""
