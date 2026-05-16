@@ -1,56 +1,40 @@
-"""Phase 1: Catalog iCloud assets within a date range and populate state.json.
+"""Phase 1: Summarise what will be downloaded from iCloud.
 
-The Google Photos Library API no longer allows reading a user's full library
-(photoslibrary.readonly was removed April 1 2025). We skip the comparison step
-entirely — since all photos in the migration window have wrong dates, we just
-catalog what's in iCloud for that window and queue everything for fix + re-upload.
+icloudpd 1.32+ ships as a compiled binary with no importable Python API.
+The catalog phase does a dry-run list of files in the target date window
+so the user can confirm scope before the real download starts.
 """
 
+import subprocess
 from datetime import datetime, timezone, timedelta
 
-from photo_tribute.state import State, AssetRecord, AssetStatus
 
+def run_catalog(icloud_username: str, icloud_password: str | None, days: int) -> list[str]:
+    """Print the filenames that would be downloaded and return them as a list."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
-def run_catalog(icloud_api, days: int) -> State:
-    """Fetch iCloud assets added within `days` days and write them to state.json."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cmd = [
+        "icloudpd",
+        "--directory", "/tmp/photo-tribute-catalog-probe",
+        "--username", icloud_username,
+        "--cookie-directory", ".icloud-session",
+        "--only-print-filenames",
+        "--skip-created-before", cutoff,
+        "--folder-structure", "none",
+        "--no-progress-bar",
+    ]
 
-    print(f"Fetching iCloud assets added in the last {days} days...")
-    state = State.load()
-    found = 0
+    if icloud_password:
+        cmd += ["--password", icloud_password]
 
-    for asset in icloud_api.photos.all:
-        added = asset.added_date
-        if added is None:
-            continue
+    print(f"Listing iCloud assets created since {cutoff}...")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-        if added.tzinfo is None:
-            added = added.replace(tzinfo=timezone.utc)
+    filenames = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    print(f"Found {len(filenames)} assets to process.")
+    if filenames:
+        print("Sample (first 5):")
+        for f in filenames[:5]:
+            print(f"  {f}")
 
-        if added < cutoff:
-            break  # photos.all is newest-first; stop once past the window
-
-        capture = asset.asset_date
-        if capture is None:
-            continue
-        if capture.tzinfo is None:
-            capture = capture.replace(tzinfo=timezone.utc)
-
-        # Skip assets already tracked (allows re-running audit safely)
-        if asset.id in state.assets:
-            continue
-
-        record = AssetRecord(
-            icloud_id=asset.id,
-            filename=asset.filename,
-            icloud_date=capture.isoformat(),
-            google_id="",   # unknown — Google read API unavailable
-            google_date="", # unknown
-            status=AssetStatus.PENDING,
-        )
-        state.upsert(record)
-        found += 1
-
-    state.save()
-    print(f"Catalog complete. {found} new assets queued (total tracked: {len(state.assets)}).")
-    return state
+    return filenames

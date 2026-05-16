@@ -1,64 +1,85 @@
-"""Phase 2: Download mismatched assets from iCloud via icloudpd."""
+"""Phase 2: Download assets from iCloud via icloudpd and build state from EXIF."""
 
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
-from photo_tribute.state import State, AssetStatus
+import exiftool
+
+from photo_tribute.state import State, AssetRecord, AssetStatus
 
 STAGING_DIR = Path("staging")
 
 
-def run_download(icloud_username: str, icloud_password: str | None = None) -> None:
-    """Download all PENDING assets from iCloud into the staging directory."""
-    state = State.load()
-    pending = state.by_status(AssetStatus.PENDING)
+def _read_exif_date(path: Path, et: exiftool.ExifToolHelper) -> str | None:
+    """Return DateTimeOriginal from file as ISO8601 string, or None."""
+    try:
+        meta = et.get_tags(str(path), ["EXIF:DateTimeOriginal", "QuickTime:CreateDate"])
+        for tag in ("EXIF:DateTimeOriginal", "QuickTime:CreateDate"):
+            val = meta[0].get(tag)
+            if val:
+                dt = datetime.strptime(val, "%Y:%m:%d %H:%M:%S")
+                return dt.replace(tzinfo=timezone.utc).isoformat()
+    except Exception:
+        pass
+    return None
 
-    if not pending:
-        print("No pending assets to download.")
-        return
 
-    print(f"Downloading {len(pending)} assets from iCloud...")
+def run_download(icloud_username: str, icloud_password: str | None = None, days: int = 15) -> None:
+    """Download iCloud assets for the given window and populate state.json."""
     STAGING_DIR.mkdir(exist_ok=True)
 
-    # icloudpd downloads by album/folder, not individual asset IDs.
-    # We download the full recent window into staging and then filter locally.
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+
     cmd = [
         "icloudpd",
         "--directory", str(STAGING_DIR),
         "--username", icloud_username,
-        "--set-exif-datetime",       # write DateTimeOriginal from asset capture date
-        "--skip-live-photos",        # keep image + video separate for now
-        "--recent", str(len(pending) + 50),  # small buffer for misses
-        "--until-found", "20",       # stop after 20 consecutive already-present files
+        "--cookie-directory", ".icloud-session",
+        "--set-exif-datetime",
+        "--skip-live-photos",
+        "--folder-structure", "none",       # flat directory — easier to scan
+        "--skip-created-before", cutoff,
         "--no-progress-bar",
     ]
 
     if icloud_password:
         cmd += ["--password", icloud_password]
 
-    # Session cookie is picked up automatically from .icloud-session/ by pyicloud-ipd
-    cmd += ["--cookie-directory", ".icloud-session"]
-
+    print(f"Downloading iCloud assets created since {cutoff}...")
     result = subprocess.run(cmd, check=False)
-
     if result.returncode != 0:
-        print(f"icloudpd exited with code {result.returncode}. Check output above.")
+        print(f"icloudpd exited with code {result.returncode}.")
 
-    # Map downloaded files back to state records by filename
-    downloaded_files = {f.name: f for f in STAGING_DIR.rglob("*") if f.is_file()}
-    matched = 0
+    # Build state from whatever landed in staging
+    print("Reading EXIF dates from downloaded files...")
+    state = State.load()
+    new_count = 0
 
-    for record in pending:
-        local = downloaded_files.get(record.filename)
-        if local:
-            record.local_path = str(local)
-            record.status = AssetStatus.DOWNLOADED
+    with exiftool.ExifToolHelper() as et:
+        for path in sorted(STAGING_DIR.iterdir()):
+            if not path.is_file():
+                continue
+
+            # Use filename as a stable key (no iCloud asset ID available via CLI)
+            asset_key = path.name
+            if asset_key in {r.icloud_id for r in state.assets.values()}:
+                continue  # already tracked
+
+            icloud_date = _read_exif_date(path, et) or ""
+
+            record = AssetRecord(
+                icloud_id=asset_key,
+                filename=path.name,
+                icloud_date=icloud_date,
+                google_id="",
+                google_date="",
+                status=AssetStatus.DOWNLOADED,
+                local_path=str(path),
+            )
             state.upsert(record)
-            matched += 1
-        else:
-            record.error = "File not found in staging after icloudpd run"
-            record.status = AssetStatus.FAILED
-            state.upsert(record)
+            new_count += 1
 
     state.save()
-    print(f"Download phase complete. {matched}/{len(pending)} files located in staging.")
+    print(f"Download complete. {new_count} new files tracked (total: {len(state.assets)}).")
