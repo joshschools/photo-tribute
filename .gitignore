@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Auth / secrets
+.icloud-session/
+token.json
+client_secrets.json
+credentials.json
+
+# Runtime state
+state.json
+staging/
+
+# OS
+.DS_Store

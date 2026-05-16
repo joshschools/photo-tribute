@@ -1,0 +1,7 @@
+icloudpd>=1.20
+click>=8.1
+google-auth>=2.0
+google-auth-oauthlib>=1.0
+requests>=2.31
+pyexiftool>=0.5
+tqdm>=4.0

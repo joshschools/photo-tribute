@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(pip show *)",
+      "Bash(icloudpd *)",
+      "Bash(exiftool *)",
+      "Bash(python3 *)"
+    ]
+  }
+}

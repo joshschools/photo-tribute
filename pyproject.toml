@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "photo-tribute"
+version = "0.1.0"
+description = "Restore correct dates to Google Photos after migrating from iCloud"
+requires-python = ">=3.10"
+dependencies = [
+    "icloudpd>=1.20",
+    "click>=8.1",
+    "google-auth>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "requests>=2.31",
+    "pyexiftool>=0.5",
+    "tqdm>=4.0",
+]
+
+[project.scripts]
+photo-tribute = "photo_tribute.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["photo_tribute*"]
